@@ -1,38 +1,52 @@
-import os
 import sys
-from dataclasses import dataclass
-
-from sklearn.ensemble import (
-    AdaBoostClassifier,
-    GradientBoostingClassifier,
-    RandomForestClassifier,
-)
+from typing import Generator, List, Tuple
+import os
+import pandas as pd
+import numpy as np
 from sklearn.metrics import r2_score
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.tree import DecisionTreeClassifier
-from xgboost import XGBClassifier
 
+from sklearn.linear_model import LinearRegression, Ridge, Lasso
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.model_selection import GridSearchCV, train_test_split
+from sklearn.tree import DecisionTreeRegressor
 from src.constant import *
-from src.exception import CustomException
+from src.cloud_storage.aws_syncer import S3Sync
+from src.exception import VisibilityException
 from src.logger import logging
-from src.utils import evaluate_models, load_object, save_object, upload_file
+from src.utils.main_utils import MainUtils
 
+from dataclasses import dataclass
 
 @dataclass
 class ModelTrainerConfig:
-    trained_model_file_path = os.path.join("artifacts", "model.pkl")
+    model_trainer_dir= os.path.join(artifact_folder,'model_trainer')
+    trained_model_path= os.path.join(model_trainer_dir, 'trained_model',"model.pkl" )
+    expected_accuracy=0.45
+    model_config_file_path= os.path.join('config','model.yaml')
 
 
-class CustomModel:
-    def __init__(self, preprocessing_object, trained_model_object):
+
+
+class VisibilityModel:
+    def __init__(self, preprocessing_object: object, trained_model_object: object):
         self.preprocessing_object = preprocessing_object
 
         self.trained_model_object = trained_model_object
 
-    def predict(self, X):
-        transformed_feature = self.preprocessing_object.transform(X)
+    def predict(self, X: pd.DataFrame) -> pd.DataFrame:
+        logging.info("Entered predict method of srcTruckModel class")
 
-        return self.trained_model_object.predict(transformed_feature)
+        try:
+            logging.info("Using the trained model to get predictions")
+
+            transformed_feature = self.preprocessing_object.transform(X)
+
+            logging.info("Used the trained model to get predictions")
+
+            return self.trained_model_object.predict(transformed_feature)
+
+        except Exception as e:
+            raise VisibilityException(e, sys) from e
 
     def __repr__(self):
         return f"{type(self.trained_model_object).__name__}()"
@@ -43,7 +57,115 @@ class CustomModel:
 
 class ModelTrainer:
     def __init__(self):
+        
+
         self.model_trainer_config = ModelTrainerConfig()
+        self.s3_sync = S3Sync()
+
+
+        self.utils = MainUtils()
+
+    
+    def evaluate_models(self, X, y, models):
+        try:
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.2, random_state=42
+            )
+
+            report = {}
+
+            for i in range(len(list(models))):
+                model = list(models.values())[i]
+
+                model.fit(X_train, y_train)  # Train model
+
+                y_train_pred = model.predict(X_train)
+
+                y_test_pred = model.predict(X_test)
+
+                train_model_score = r2_score(y_train, y_train_pred)
+
+                test_model_score = r2_score(y_test, y_test_pred)
+
+                report[list(models.keys())[i]] = test_model_score
+
+            return report
+
+        except Exception as e:
+            raise VisibilityException(e, sys)
+
+
+    def get_best_model(self,
+                    x_train:np.array, 
+                    y_train: np.array,
+                    x_test:np.array, 
+                    y_test: np.array):
+        try:
+            models = {
+                        'Random Forest Regression': RandomForestRegressor(),
+                        'DecisionTreeRegressor' : DecisionTreeRegressor()
+                        }
+             
+
+            model_report: dict = self.evaluate_models(
+                 x_train =  x_train, 
+                 y_train = y_train, 
+                 x_test =  x_test, 
+                 y_test = y_test, 
+                 models = models
+            )
+
+            print(model_report)
+
+            best_model_score = max(sorted(model_report.values()))
+
+            ## To get best model name from dict
+
+            best_model_name = list(model_report.keys())[
+                list(model_report.values()).index(best_model_score)
+            ]
+
+            best_model_object = models[best_model_name]
+
+
+            return best_model_name, best_model_object, best_model_score
+
+
+        except Exception as e:
+            raise VisibilityException(e,sys)
+        
+    def finetune_best_model(self,
+                            best_model_object:object,
+                            best_model_name,
+                            X_train,
+                            y_train,
+                            ) -> object:
+        
+        try:
+
+            model_param_grid = self.utils.read_yaml_file(self.model_trainer_config.model_config_file_path)["model_selection"]["model"][best_model_name]["search_param_grid"]
+
+
+            grid_search = GridSearchCV(
+                best_model_object, param_grid=model_param_grid, cv=5, n_jobs=-1, verbose=1 )
+            
+            grid_search.fit(X_train, y_train)
+
+            best_params = grid_search.best_params_
+
+            print("best params are:", best_params)
+
+            finetuned_model = best_model_object.set_params(**best_params)
+            
+
+            return finetuned_model
+        
+        except Exception as e:
+            raise VisibilityException(e,sys)
+
+
+
+
 
     def initiate_model_trainer(self, train_array, test_array, preprocessor_path):
         try:
@@ -57,17 +179,24 @@ class ModelTrainer:
             )
 
             models = {
-                "Random Forest": RandomForestClassifier(),
-                "Decision Tree": DecisionTreeClassifier(),
-                "Gradient Boosting": GradientBoostingClassifier(),
-                "K-Neighbors Classifier": KNeighborsClassifier(),
-                "XGBClassifier": XGBClassifier(),
-                "AdaBoost Classifier": AdaBoostClassifier(),
-            }
+                        'Linear Regression': LinearRegression(),
+                        'Ridge Regression': Ridge(),
+                        'Lasso Regression': Lasso(),
+                        'Random Forest Regression': RandomForestRegressor(),
+                        'Gradient Boosting Regression':GradientBoostingRegressor()
+                        }
 
             logging.info(f"Extracting model config file path")
 
-            model_report: dict = evaluate_models(X=x_train, y=y_train, models=models)
+
+            
+            preprocessor = self.utils.load_object(file_path=preprocessor_path)
+
+
+
+            logging.info(f"Extracting model config file path")
+
+            model_report: dict = self.evaluate_models(X=x_train, y=y_train, models=models)
 
             ## To get best model score from dict
             best_model_score = max(sorted(model_report.values()))
@@ -80,38 +209,47 @@ class ModelTrainer:
 
             best_model = models[best_model_name]
 
-            if best_model_score < 0.6:
-                raise Exception("No best model found")
 
+            best_model = self.finetune_best_model(
+                best_model_name= best_model_name,
+                best_model_object= best_model,
+                X_train= x_train,
+                y_train= y_train
+            )
+
+            best_model.fit(x_train, y_train)
+            y_pred = best_model.predict(x_test)
+            best_model_score = r2_score(y_test, y_pred)
+            print(best_model_score)
+
+            if best_model_score < 0.5:
+                raise Exception("No best model found with an accuracy greater than the threshold 0.6")
+            
             logging.info(f"Best found model on both training and testing dataset")
 
-            preprocessing_obj = load_object(file_path=preprocessor_path)
-
-            custom_model = CustomModel(
-                preprocessing_object=preprocessing_obj,
-                trained_model_object=best_model,
+ 
+            custom_model = VisibilityModel(
+                preprocessing_object=preprocessor,
+                trained_model_object=best_model
             )
 
             logging.info(
-                f"Saving model at path: {self.model_trainer_config.trained_model_file_path}"
+                f"Saving model at path: {self.model_trainer_config.trained_model_path}"
             )
 
-            save_object(
-                file_path=self.model_trainer_config.trained_model_file_path,
+            os.makedirs(os.path.dirname(self.model_trainer_config.trained_model_path), exist_ok=True)
+
+            self.utils.save_object(
+                file_path=self.model_trainer_config.trained_model_path,
                 obj=custom_model,
             )
 
-            predicted = best_model.predict(x_test)
+            self.s3_sync.sync_folder_to_s3(folder=os.path.dirname(self.model_trainer_config.trained_model_path),
+                                           aws_buket_name= AWS_S3_BUCKET_NAME)
 
-            r2_square = r2_score(y_test, predicted)
+            
 
-            upload_file(
-                from_filename=self.model_trainer_config.trained_model_file_path,
-                to_filename="model.pkl",
-                bucket_name=AWS_S3_BUCKET_NAME,
-            )
-
-            return r2_square
+            return best_model_score
 
         except Exception as e:
-            raise CustomException(e, sys)
+            raise VisibilityException(e, sys)
