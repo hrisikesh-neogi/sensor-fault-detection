@@ -2,11 +2,11 @@ from datetime import datetime
 import os
 
 
-AWS_S3_BUCKET_NAME = "visibility-bucket"
-MONGO_DATABASE_NAME = "visibility"
+AWS_S3_BUCKET_NAME = "sensor-bucket"
+MONGO_DATABASE_NAME = "sensor"
 
-TARGET_COLUMN = "VISIBILITY"
-CLUSTER_LABEL_COLUMN = "Cluster"
+TARGET_COLUMN = "quality"
+
 
 MODEL_FILE_NAME = "model"
 MODEL_FILE_EXTENSION = ".pkl"

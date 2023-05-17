@@ -1,5 +1,7 @@
 # 📄✏ Sensor Fault Detection Project
-The aim of this project is to develop an automated sensor fault detection system for Scania trucks that can identify and diagnose sensor faults in real-time. The system should be able to detect faults in a wide range of sensors, including those used to monitor engine performance, fuel efficiency, and safety features. The goal is to improve the overall reliability and safety of Scania trucks by quickly identifying and addressing sensor faults, reducing the risk of accidents and downtime caused by equipment failure.
+**Brief:** In electronics, a **wafer** (also called a slice or substrate) is a thin slice of semiconductor, such as a crystalline silicon (c-Si), used for the fabrication of integrated circuits and, in photovoltaics, to manufacture solar cells. The wafer serves as the substrate(serves as foundation for contruction of other components) for microelectronic devices built in and upon the wafer. 
+
+It undergoes many microfabrication processes, such as doping, ion implantation, etching, thin-film deposition of various materials, and photolithographic patterning. Finally, the individual microcircuits are separated by wafer dicing and packaged as an integrated circuit.
 
 #### Dataset is taken from Kaggle and stored in mongodb
 
