@@ -74,16 +74,16 @@ class MainUtils:
         except Exception as e:
             raise CustomException(e, sys)
 
+    @staticmethod
+    def download_model(bucket_name, bucket_file_name, dest_file_name):
+        try:
+            s3_client = boto3.client("s3")
 
-def download_model(bucket_name, bucket_file_name, dest_file_name):
-    try:
-        s3_client = boto3.client("s3")
+            s3_client.download_file(bucket_name, bucket_file_name, dest_file_name)
 
-        s3_client.download_file(bucket_name, bucket_file_name, dest_file_name)
+            return dest_file_name
 
-        return dest_file_name
-
-    except Exception as e:
-        raise CustomException(e, sys)
+        except Exception as e:
+            raise CustomException(e, sys)
         
     

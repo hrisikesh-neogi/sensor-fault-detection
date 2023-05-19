@@ -7,7 +7,7 @@ from src.exception import CustomException
 import sys
 from flask import request
 from src.constant import *
-from src.utils import download_model, load_object
+from src.utils.main_utils import MainUtils
 
 from dataclasses import dataclass
         
@@ -24,6 +24,7 @@ class PredictionPipeline:
     def __init__(self, request: request):
 
         self.request = request
+        self.utils = MainUtils()
         self.prediction_file_detail = PredictionFileDetail()
 
 
@@ -58,13 +59,13 @@ class PredictionPipeline:
 
     def predict(self, features):
             try:
-                model_path = download_model(
+                model_path = self.utils.download_model(
                     bucket_name=AWS_S3_BUCKET_NAME,
                     bucket_file_name="model.pkl",
                     dest_file_name="model.pkl",
                 )
 
-                model = load_object(file_path=model_path)
+                model = self.utils.load_object(file_path=model_path)
 
                 preds = model.predict(features)
 
@@ -89,11 +90,14 @@ class PredictionPipeline:
    
         try:
 
-            prediction_column_name : str = "class"
+            prediction_column_name : str = TARGET_COLUMN
             input_dataframe: pd.DataFrame = pd.read_csv(input_dataframe_path)
+            
+            input_dataframe =  input_dataframe.drop(columns="Unnamed: 0") if "Unnamed: 0" in input_dataframe.columns else input_dataframe
+
             predictions = self.predict(input_dataframe)
             input_dataframe[prediction_column_name] = [pred for pred in predictions]
-            target_column_mapping = {0:'neg', 1:'pos'}
+            target_column_mapping = {0:'bad', 1:'good'}
 
             input_dataframe[prediction_column_name] = input_dataframe[prediction_column_name].map(target_column_mapping)
             
