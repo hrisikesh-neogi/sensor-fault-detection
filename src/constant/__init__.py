@@ -2,7 +2,7 @@ from datetime import datetime
 import os
 
 
-AWS_S3_BUCKET_NAME = "sensor-bucket"
+AWS_S3_BUCKET_NAME = "wafer-fault"
 MONGO_DATABASE_NAME = "sensor"
 
 TARGET_COLUMN = "quality"

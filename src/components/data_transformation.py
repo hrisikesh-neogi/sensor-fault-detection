@@ -1,14 +1,16 @@
 import sys
-from typing import Union
 import os
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
 
-from collections import namedtuple
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import RobustScaler, FunctionTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import  StandardScaler
+
 from src.constant import *
-from src.exception import VisibilityException
+from src.exception import CustomException
 from src.logger import logging
 from src.utils.main_utils import MainUtils
 from dataclasses import dataclass
@@ -37,25 +39,7 @@ class DataTransformation:
         self.utils =  MainUtils()
         
     
-    def drop_schema_columns(self, dataframe:pd.DataFrame) -> pd.DataFrame:
-        """
-        Method Name :   drop_schema_columns
-        Description :   This method reads the schema.yml file and drops the column in th dataset based on the schema given. 
-        
-        Output      :   a pd.DataFrame dropping the schema columns
-        On Failure  :   Write an exception log and then raise an exception
-        
-        Version     :   1.2
-        Revisions   :   moved setup to cloud
-        """
-        try:
-            _schema_config = self.utils.read_schema_config_file()
-            df = dataframe.drop(columns =  _schema_config["drop_columns"])
-
-            return df
-        except Exception as e:
-            raise VisibilityException(e,sys)
-
+    
     @staticmethod
     def get_merged_batch_data(valid_data_dir:str) -> pd.DataFrame:
         """
@@ -76,47 +60,35 @@ class DataTransformation:
                 csv_data.append(data)
 
             merged_data = pd.concat(csv_data)
+            merged_data.drop(columns="Wafer", inplace= True)
+
+            merged_data.rename(columns={"Good/Bad": TARGET_COLUMN}, inplace=True)
+
 
             return merged_data
         except Exception as e:
-            raise VisibilityException(e,sys)
+            raise CustomException(e,sys)
         
-    def apply_outliers_capping(self,dataframe:pd.DataFrame):
-        """
-            Method Name :   apply_outliers_capping
-            Description :   This method reduces the outliers
-            
-            Output      :   a pd.DataFrame
-            On Failure  :   Write an exception log and then raise an exception
-            
-            Version     :   1.2
-            Revisions   :   moved setup to cloud
-        """
-
-
+    def get_data_transformer_object(self):
         try:
-
-            outliers_columns = self.utils.read_schema_config_file()['outlier_columns']
-
-            
-            for column in outliers_columns:
-
-                percentile25 = dataframe[column].quantile(0.25)
-                percentile75 = dataframe[column].quantile(0.75)
-                iqr = percentile75 - percentile25
-                upper_limit = percentile75 + 1.5 * iqr
-                lower_limit = percentile25 - 1.5 * iqr
-                dataframe.loc[(dataframe[column]>upper_limit), column]= upper_limit
-                dataframe.loc[(dataframe[column]<lower_limit), column]= lower_limit   
-            
             
 
-            return dataframe
+            # define the steps for the preprocessor pipeline
+            imputer_step = ('imputer', SimpleImputer(strategy='constant', fill_value=0))
+            scaler_step = ('scaler', RobustScaler())
+
+            preprocessor = Pipeline(
+                steps=[
+                imputer_step,
+                scaler_step
+                ]
+            )
+            
+            return preprocessor
 
         except Exception as e:
-            raise VisibilityException(e,sys)
-
-
+            raise CustomException(e, sys)
+        
 
              
     def initiate_data_transformation(self) :
@@ -137,27 +109,28 @@ class DataTransformation:
 
         try:
             dataframe = self.get_merged_batch_data(valid_data_dir=self.valid_data_dir)
+           
             
-            dataframe = self.drop_schema_columns(dataframe=dataframe)
             
-            dataframe = self.apply_outliers_capping(dataframe)
-
             X = dataframe.drop(columns= TARGET_COLUMN)
-            y = dataframe[TARGET_COLUMN]
+            y = np.where(dataframe[TARGET_COLUMN]==-1,0, 1)  #replacing the -1 with 0 for model training
+            
             
             X_train, X_test, y_train, y_test = train_test_split(X,y, test_size = 0.2 )
 
 
 
-            preprocessor = StandardScaler()
+            preprocessor = self.get_data_transformer_object()
 
             X_train_scaled =  preprocessor.fit_transform(X_train)
             X_test_scaled  =  preprocessor.transform(X_test)
 
+            
+
 
             preprocessor_path = self.data_transformation_config.transformed_object_file_path
             os.makedirs(os.path.dirname(preprocessor_path), exist_ok= True)
-            self.utils.save_object(preprocessor_path,
+            self.utils.save_object( file_path= preprocessor_path,
                         obj= preprocessor)
 
             train_arr = np.c_[X_train_scaled, np.array(y_train) ]
@@ -167,4 +140,4 @@ class DataTransformation:
         
 
         except Exception as e:
-            raise VisibilityException(e, sys) from e
+            raise CustomException(e, sys) from e

@@ -3,15 +3,14 @@ from typing import Generator, List, Tuple
 import os
 import pandas as pd
 import numpy as np
-from sklearn.metrics import r2_score
+from sklearn.metrics import accuracy_score
 
-from sklearn.linear_model import LinearRegression, Ridge, Lasso
-from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from xgboost import XGBClassifier
+from sklearn.svm import SVC
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.model_selection import GridSearchCV, train_test_split
-from sklearn.tree import DecisionTreeRegressor
 from src.constant import *
-from src.cloud_storage.aws_syncer import S3Sync
-from src.exception import VisibilityException
+from src.exception import CustomException
 from src.logger import logging
 from src.utils.main_utils import MainUtils
 
@@ -46,7 +45,7 @@ class VisibilityModel:
             return self.trained_model_object.predict(transformed_feature)
 
         except Exception as e:
-            raise VisibilityException(e, sys) from e
+            raise CustomException(e, sys) from e
 
     def __repr__(self):
         return f"{type(self.trained_model_object).__name__}()"
@@ -60,10 +59,16 @@ class ModelTrainer:
         
 
         self.model_trainer_config = ModelTrainerConfig()
-        self.s3_sync = S3Sync()
 
 
         self.utils = MainUtils()
+
+        self.models = {
+                        'XGBClassifier': XGBClassifier(),
+                        'GradientBoostingClassifier' : GradientBoostingClassifier(),
+                        'SVC' : SVC(),
+                        'RandomForestClassifier': RandomForestClassifier()
+                        }
 
     
     def evaluate_models(self, X, y, models):
@@ -83,16 +88,16 @@ class ModelTrainer:
 
                 y_test_pred = model.predict(X_test)
 
-                train_model_score = r2_score(y_train, y_train_pred)
+                train_model_score = accuracy_score(y_train, y_train_pred)
 
-                test_model_score = r2_score(y_test, y_test_pred)
+                test_model_score = accuracy_score(y_test, y_test_pred)
 
                 report[list(models.keys())[i]] = test_model_score
 
             return report
 
         except Exception as e:
-            raise VisibilityException(e, sys)
+            raise CustomException(e, sys)
 
 
     def get_best_model(self,
@@ -101,10 +106,7 @@ class ModelTrainer:
                     x_test:np.array, 
                     y_test: np.array):
         try:
-            models = {
-                        'Random Forest Regression': RandomForestRegressor(),
-                        'DecisionTreeRegressor' : DecisionTreeRegressor()
-                        }
+            
              
 
             model_report: dict = self.evaluate_models(
@@ -112,7 +114,7 @@ class ModelTrainer:
                  y_train = y_train, 
                  x_test =  x_test, 
                  y_test = y_test, 
-                 models = models
+                 models = self.models
             )
 
             print(model_report)
@@ -125,14 +127,14 @@ class ModelTrainer:
                 list(model_report.values()).index(best_model_score)
             ]
 
-            best_model_object = models[best_model_name]
+            best_model_object = self.models[best_model_name]
 
 
             return best_model_name, best_model_object, best_model_score
 
 
         except Exception as e:
-            raise VisibilityException(e,sys)
+            raise CustomException(e,sys)
         
     def finetune_best_model(self,
                             best_model_object:object,
@@ -161,7 +163,7 @@ class ModelTrainer:
             return finetuned_model
         
         except Exception as e:
-            raise VisibilityException(e,sys)
+            raise CustomException(e,sys)
 
 
 
@@ -178,13 +180,7 @@ class ModelTrainer:
                 test_array[:, -1],
             )
 
-            models = {
-                        'Linear Regression': LinearRegression(),
-                        'Ridge Regression': Ridge(),
-                        'Lasso Regression': Lasso(),
-                        'Random Forest Regression': RandomForestRegressor(),
-                        'Gradient Boosting Regression':GradientBoostingRegressor()
-                        }
+            
 
             logging.info(f"Extracting model config file path")
 
@@ -196,7 +192,7 @@ class ModelTrainer:
 
             logging.info(f"Extracting model config file path")
 
-            model_report: dict = self.evaluate_models(X=x_train, y=y_train, models=models)
+            model_report: dict = self.evaluate_models(X=x_train, y=y_train, models=self.models)
 
             ## To get best model score from dict
             best_model_score = max(sorted(model_report.values()))
@@ -207,7 +203,8 @@ class ModelTrainer:
                 list(model_report.values()).index(best_model_score)
             ]
 
-            best_model = models[best_model_name]
+
+            best_model = self.models[best_model_name]
 
 
             best_model = self.finetune_best_model(
@@ -219,8 +216,10 @@ class ModelTrainer:
 
             best_model.fit(x_train, y_train)
             y_pred = best_model.predict(x_test)
-            best_model_score = r2_score(y_test, y_pred)
-            print(best_model_score)
+            best_model_score = accuracy_score(y_test, y_pred)
+            
+            print(f"best model name {best_model_name} and score: {best_model_score}")
+
 
             if best_model_score < 0.5:
                 raise Exception("No best model found with an accuracy greater than the threshold 0.6")
@@ -244,12 +243,13 @@ class ModelTrainer:
                 obj=custom_model,
             )
 
-            self.s3_sync.sync_folder_to_s3(folder=os.path.dirname(self.model_trainer_config.trained_model_path),
-                                           aws_buket_name= AWS_S3_BUCKET_NAME)
+            self.utils.upload_file(from_filename= self.model_trainer_config.trained_model_path,
+                                   to_filename="model.pkl",
+                                   bucket_name= AWS_S3_BUCKET_NAME)
 
             
 
             return best_model_score
 
         except Exception as e:
-            raise VisibilityException(e, sys)
+            raise CustomException(e, sys)

@@ -4,14 +4,14 @@ import pandas as pd
 import re
 import os
 import shutil
+import json
 
 from src.constant import *
-from src.exception import VisibilityException
+from src.exception import CustomException
 from src.logger import logging
 from src.utils.main_utils import MainUtils
 from dataclasses import dataclass
 
-SAMPLE_FILE_NAME =  "visibility_08012020_120000.csv",
 LENGTH_OF_DATE_STAMP_IN_FILE =  8
 LENGTH_OF_TIME_STAMP_IN_FILE =  6
 NUMBER_OF_COLUMNS  = 11
@@ -21,6 +21,8 @@ class DataValidationConfig:
     data_validation_dir:str =os.path.join(artifact_folder,'data_validation')
     valid_data_dir:str =os.path.join(data_validation_dir,'validated')
     invalid_data_dir:str =os.path.join(data_validation_dir,'invalid')
+    schema_config_file_path: str = os.path.join('config','training_schema.json')
+
 
 class DataValidation:
     def __init__(self, 
@@ -31,10 +33,37 @@ class DataValidation:
         
         self.utils = MainUtils()
 
-        self._schema_config = self.utils.read_schema_config_file()
+    def valuesFromSchema(self):
+        """
+                        Method Name: valuesFromSchema
+                        Description: This method extracts all the relevant information from the pre-defined "Schema" file.
+                        Output: LengthOfDateStampInFile, LengthOfTimeStampInFile, column_names, Number of Columns
+                        On Failure: Raise ValueError,KeyError,Exception
 
+                         Written By: iNeuron Intelligence
+                        Version: 1.0
+                        Revisions: None
+
+                                """
+        try:
+            with open(self.data_validation_config.schema_config_file_path, 'r') as f:
+                dic = json.load(f)
+                f.close()
+            pattern = dic['SampleFileName']
+            LengthOfDateStampInFile = dic['LengthOfDateStampInFile']
+            LengthOfTimeStampInFile = dic['LengthOfTimeStampInFile']
+            column_names = dic['ColName']
+            NumberofColumns = dic['NumberofColumns']
+
+            return LengthOfDateStampInFile, LengthOfTimeStampInFile, column_names, NumberofColumns
+
+        except Exception as e:
+            raise CustomException(e,sys)
     
-    def validate_file_name(self,file_path:str) -> bool:
+    def validate_file_name(self,
+                           file_path:str,
+                           length_of_date_stamp:int,
+                           length_of_time_stamp:int) -> bool:
         """
             Method Name :   validate_file_columns
             Description :   This method validates the file name for a particular raw file 
@@ -48,11 +77,11 @@ class DataValidation:
         try:
 
             file_name = os.path.basename(file_path)
-            regex = "['visibility']+['\_'']+[\d_]+[\d]+\.csv"
+            regex = "['wafer']+['\_'']+[\d_]+[\d]+\.csv"
             if (re.match(regex, file_name)):
                 splitAtDot = re.split('.csv', file_name)
                 splitAtDot = (re.split('_', splitAtDot[0]))
-                filename_validation_status =  len(splitAtDot[1]) == LENGTH_OF_DATE_STAMP_IN_FILE  and  len(splitAtDot[2]) == LENGTH_OF_TIME_STAMP_IN_FILE
+                filename_validation_status =  len(splitAtDot[1]) == length_of_date_stamp  and  len(splitAtDot[2]) == length_of_time_stamp
             else:
                 filename_validation_status = False
 
@@ -60,9 +89,10 @@ class DataValidation:
             return filename_validation_status
         
         except Exception as e:
-            raise VisibilityException(e,sys)
+            raise CustomException(e,sys)
 
-    def validate_no_of_columns(self, file_path:str) -> bool:
+    def validate_no_of_columns(self, file_path:str,
+                               schema_no_of_columns:int) -> bool:
         """
             Method Name :   validate_column_columns
             Description :   This method validates the number of columns for a particular raw file
@@ -76,13 +106,13 @@ class DataValidation:
         
         try:
             dataframe = pd.read_csv(file_path)
-            column_length_validation_status = len(dataframe.columns) == len(self._schema_config["columns"])
+            column_length_validation_status = len(dataframe.columns) == schema_no_of_columns
         
 
             return column_length_validation_status
 
         except Exception as e:
-            raise VisibilityException(e,sys)
+            raise CustomException(e,sys)
 
 
     def validate_missing_values_in_whole_column(self,file_path: str) -> bool:
@@ -114,7 +144,7 @@ class DataValidation:
             return missing_value_validation_status
         
         except Exception as e:
-            raise VisibilityException(e,sys)
+            raise CustomException(e,sys)
 
 
     def get_raw_batch_files_paths(self) -> List:
@@ -136,7 +166,7 @@ class DataValidation:
             return raw_batch_files_paths
 
         except Exception as e:
-            raise VisibilityException(e,sys)
+            raise CustomException(e,sys)
 
     def move_raw_files_to_validation_dir(self, src_path:str, dest_path:str):
         
@@ -158,7 +188,7 @@ class DataValidation:
             if os.path.basename(src_path) not in os.listdir(dest_path):
                 shutil.move(src_path, dest_path)
         except Exception as e:
-            raise VisibilityException(e,sys)
+            raise CustomException(e,sys)
 
 
     def validate_raw_files(self) ->bool:
@@ -177,11 +207,21 @@ class DataValidation:
 
         try:
             raw_batch_files_paths = self.get_raw_batch_files_paths()
+            length_of_date_stamp, length_of_time_stamp, column_names, no_of_column = self.valuesFromSchema()
+
+            
 
             validated_files = 0
             for raw_file_path in raw_batch_files_paths:
-                file_name_validation_status =  self.validate_file_name(raw_file_path)
-                column_length_validation_status = self.validate_no_of_columns(raw_file_path)
+                file_name_validation_status =  self.validate_file_name(
+                                                                        raw_file_path,
+                                                                        length_of_date_stamp= length_of_date_stamp,
+                                                                        length_of_time_stamp= length_of_time_stamp
+                                                                        )
+                column_length_validation_status = self.validate_no_of_columns(
+                                                                            raw_file_path,
+                                                                            schema_no_of_columns= no_of_column)
+                
                 missing_value_validation_status =  self.validate_missing_values_in_whole_column(raw_file_path)
 
                 if ( file_name_validation_status 
@@ -199,7 +239,7 @@ class DataValidation:
             return validation_status
 
         except Exception as e:
-            raise VisibilityException(e,sys)
+            raise CustomException(e,sys)
             
 
 
@@ -232,4 +272,4 @@ class DataValidation:
             
            
         except Exception as e:
-            raise VisibilityException(e, sys) from e
+            raise CustomException(e, sys) from e

@@ -72,6 +72,7 @@ class DataIngestion:
            
                 logging.info(f"Shape of {collection_name}: {dataset.shape}")
                 feature_store_file_path = os.path.join(raw_batch_files_path, collection_name+'.csv')
+                dataset.rename(columns={"Unnamed: 0": "Wafer"}, inplace=True)
                 dataset.to_csv(feature_store_file_path,index=False)
            
  

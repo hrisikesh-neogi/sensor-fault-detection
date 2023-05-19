@@ -4,9 +4,10 @@ import os
 import pandas as pd
 import pickle
 import yaml
+import boto3
 
 from src.constant import *
-from src.exception import VisibilityException
+from src.exception import CustomException
 from src.logger import logging
 
 
@@ -20,7 +21,7 @@ class MainUtils:
                 return yaml.safe_load(yaml_file)
 
         except Exception as e:
-            raise VisibilityException(e, sys) from e
+            raise CustomException(e, sys) from e
 
     def read_schema_config_file(self) -> dict:
         try:
@@ -29,7 +30,7 @@ class MainUtils:
             return schema_config
 
         except Exception as e:
-            raise VisibilityException(e, sys) from e
+            raise CustomException(e, sys) from e
 
     
 
@@ -44,7 +45,7 @@ class MainUtils:
             logging.info("Exited the save_object method of MainUtils class")
 
         except Exception as e:
-            raise VisibilityException(e, sys) from e
+            raise CustomException(e, sys) from e
 
     
 
@@ -61,6 +62,28 @@ class MainUtils:
             return obj
 
         except Exception as e:
-            raise VisibilityException(e, sys) from e
+            raise CustomException(e, sys) from e
+        
+    @staticmethod
+    def upload_file(from_filename, to_filename, bucket_name):
+        try:
+            s3_resource = boto3.resource("s3")
+
+            s3_resource.meta.client.upload_file(from_filename, bucket_name, to_filename)
+
+        except Exception as e:
+            raise CustomException(e, sys)
+
+
+def download_model(bucket_name, bucket_file_name, dest_file_name):
+    try:
+        s3_client = boto3.client("s3")
+
+        s3_client.download_file(bucket_name, bucket_file_name, dest_file_name)
+
+        return dest_file_name
+
+    except Exception as e:
+        raise CustomException(e, sys)
         
     

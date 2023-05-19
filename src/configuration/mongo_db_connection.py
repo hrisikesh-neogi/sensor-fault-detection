@@ -5,7 +5,7 @@ import certifi
 import pymongo
 
 from src.constant import *
-from src.exception import VisibilityException
+from src.exception import CustomException
 
 ca = certifi.where()
 
@@ -24,4 +24,4 @@ class MongoDBClient:
             self.database = self.client[database_name]
             self.database_name = database_name
         except Exception as e:
-            raise VisibilityException(e, sys)
+            raise CustomException(e, sys)
