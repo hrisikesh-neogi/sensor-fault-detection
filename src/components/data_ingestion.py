@@ -8,7 +8,7 @@ from src.constant import *
 from src.exception import CustomException
 from src.logger import logging
 
-from src.data_access.visibility_data import SensorData
+from src.data_access.sensor_data import SensorData
 from src.utils.main_utils import MainUtils
 from dataclasses import dataclass
 
