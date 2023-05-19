@@ -63,12 +63,12 @@ class DataIngestion:
             raw_batch_files_path  = self.data_ingestion_config.data_ingestion_dir
             os.makedirs(raw_batch_files_path,exist_ok=True)
 
-            visibility_data = SensorData(
+            sensor_data = SensorData(
                  database_name= MONGO_DATABASE_NAME)
             
 
             logging.info(f"Saving exported data into feature store file path: {raw_batch_files_path}")
-            for collection_name, dataset in visibility_data.export_collections_as_dataframe():
+            for collection_name, dataset in sensor_data.export_collections_as_dataframe():
            
                 logging.info(f"Shape of {collection_name}: {dataset.shape}")
                 feature_store_file_path = os.path.join(raw_batch_files_path, collection_name+'.csv')
